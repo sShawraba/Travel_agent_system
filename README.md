@@ -145,7 +145,3 @@ Plan a trip based on user description.
 - LangSmith tracing automatically enabled
 - Mock tools for quick development
 - Type hints throughout codebase
-
-## License
-
-MIT
