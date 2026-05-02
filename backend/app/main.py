@@ -7,7 +7,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.routes import travel
+from app.core.database import init_db
+from app.routes import travel, auth
 
 
 @asynccontextmanager
@@ -16,6 +17,10 @@ async def lifespan(app: FastAPI):
     # Startup
     print("🚀 Starting Travel AI Agent...")
     print(f"LangSmith tracing enabled: {settings.langchain_tracing_v2}")
+    
+    # Initialize database
+    print("📊 Initializing database...")
+    init_db()
     
     # Set environment variables for LangSmith
     os.environ["LANGCHAIN_TRACING_V2"] = str(settings.langchain_tracing_v2).lower()
@@ -31,8 +36,8 @@ async def lifespan(app: FastAPI):
 # Create app
 app = FastAPI(
     title="Smart Travel Planner",
-    description="AI-powered travel planning system",
-    version="1.0.0",
+    description="AI-powered travel planning system with authentication and persistence",
+    version="2.0.0",
     lifespan=lifespan
 )
 
@@ -46,6 +51,7 @@ app.add_middleware(
 )
 
 # Include routes
+app.include_router(auth.router)
 app.include_router(travel.router)
 
 

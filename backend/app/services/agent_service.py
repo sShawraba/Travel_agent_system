@@ -1,6 +1,8 @@
 """Agent service for LangGraph orchestration."""
 
-from typing import Any
+from typing import Any, Optional
+from uuid import UUID
+from sqlalchemy.orm import Session
 from langchain_core.tools import tool
 from langgraph.graph import StateGraph
 from typing_extensions import TypedDict
@@ -8,6 +10,7 @@ from typing_extensions import TypedDict
 from ..tools.classifier_tool import classify_travel_style
 from ..tools.rag_tool import retrieve_destination
 from ..tools.weather_tool import get_weather
+from ..core.models import AgentRun, ToolCallLog
 
 
 class AgentState(TypedDict):
@@ -23,8 +26,31 @@ class AgentState(TypedDict):
 class AgentService:
     """Service for orchestrating the agent workflow."""
     
-    def __init__(self):
+    def __init__(self, db: Optional[Session] = None):
         self.graph = self._build_graph()
+        self.db = db
+    
+    def _log_tool_call(
+        self,
+        agent_run_id: UUID,
+        tool_name: str,
+        tool_input: dict,
+        tool_output: Optional[dict] = None,
+        error_message: Optional[str] = None
+    ):
+        """Log a tool call to the database."""
+        if not self.db:
+            return
+        
+        log_entry = ToolCallLog(
+            agent_run_id=agent_run_id,
+            tool_name=tool_name,
+            tool_input=tool_input,
+            tool_output=tool_output,
+            error_message=error_message
+        )
+        self.db.add(log_entry)
+        self.db.commit()
     
     def _build_graph(self):
         """Build the LangGraph workflow."""
@@ -81,8 +107,14 @@ class AgentService:
         
         return workflow.compile()
     
-    async def run_agent(self, query: str) -> dict:
+    async def run_agent(
+        self,
+        query: str,
+        user_id: Optional[UUID] = None,
+        db: Optional[Session] = None
+    ) -> dict:
         """Run the agent with the given query."""
+        
         initial_state: AgentState = {
             "query": query,
             "travel_style": "",
@@ -92,5 +124,31 @@ class AgentService:
             "errors": []
         }
         
+        # Use provided db or instance db
+        db_session = db or self.db
+        agent_run_id = None
+        
+        # Create agent run record if user_id provided
+        if user_id and db_session:
+            agent_run = AgentRun(
+                user_id=user_id,
+                query=query,
+                errors=[]
+            )
+            db_session.add(agent_run)
+            db_session.commit()
+            db_session.refresh(agent_run)
+            agent_run_id = agent_run.id
+        
         result = self.graph.invoke(initial_state)
+        
+        # Update agent run with results
+        if agent_run_id and db_session:
+            agent_run = db_session.query(AgentRun).filter(AgentRun.id == agent_run_id).first()
+            if agent_run:
+                agent_run.travel_style = result.get("travel_style")
+                agent_run.recommended_destination = result.get("destination")
+                agent_run.errors = result.get("errors", [])
+                db_session.commit()
+        
         return result

@@ -1,102 +1,73 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import './App.css'
+import AuthPage from './pages/AuthPage'
+import TravelPlannerPage from './pages/TravelPlannerPage'
 
 function App() {
-  const [query, setQuery] = useState('')
-  const [response, setResponse] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
+  const [token, setToken] = useState(null)
+  const [user, setUser] = useState(null)
+  const [loading, setLoading] = useState(true)
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    setLoading(true)
-    setError(null)
-    setResponse(null)
+  // Check if user has a valid token on app load
+  useEffect(() => {
+    const savedToken = localStorage.getItem('access_token')
+    if (savedToken) {
+      setToken(savedToken)
+      // Verify token is still valid by calling /api/auth/me
+      verifyToken(savedToken)
+    } else {
+      setLoading(false)
+    }
+  }, [])
 
+  const verifyToken = async (tokenValue) => {
     try {
-      const res = await fetch('http://localhost:8000/api/plan-trip', {
-        method: 'POST',
+      const res = await fetch('http://localhost:8000/api/auth/me', {
         headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ query }),
+          'Authorization': `Bearer ${tokenValue}`
+        }
       })
-
-      if (!res.ok) {
-        throw new Error(`API error: ${res.status}`)
+      if (res.ok) {
+        const userData = await res.json()
+        setUser(userData)
+      } else {
+        // Token is invalid
+        localStorage.removeItem('access_token')
+        setToken(null)
       }
-
-      const data = await res.json()
-      setResponse(data)
     } catch (err) {
-      setError(err.message)
+      console.error('Token verification failed:', err)
+      localStorage.removeItem('access_token')
+      setToken(null)
     } finally {
       setLoading(false)
     }
   }
 
-  return (
-    <div className="container">
-      <header className="header">
-        <h1>✈️ Smart Travel Planner</h1>
-        <p>AI-powered travel planning</p>
-      </header>
+  const handleLogin = (newToken, userData) => {
+    localStorage.setItem('access_token', newToken)
+    setToken(newToken)
+    setUser(userData)
+  }
 
-      <main className="main">
-        <form onSubmit={handleSubmit} className="form">
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Describe your ideal trip (e.g., 'I want to relax at a beach')"
-            className="input"
-            disabled={loading}
-          />
-          <button type="submit" className="button" disabled={loading}>
-            {loading ? 'Planning...' : 'Plan My Trip'}
-          </button>
-        </form>
+  const handleLogout = () => {
+    localStorage.removeItem('access_token')
+    setToken(null)
+    setUser(null)
+  }
 
-        {error && (
-          <div className="error">
-            <p>❌ Error: {error}</p>
-          </div>
-        )}
+  if (loading) {
+    return <div className="loading">Loading...</div>
+  }
 
-        {response && (
-          <div className="response">
-            <h2>🎯 Your Travel Plan</h2>
-            
-            <div className="result-card">
-              <h3>📍 Destination</h3>
-              <p className="highlight">{response.recommended_destination}</p>
-            </div>
+  if (!token) {
+    return <AuthPage onLogin={handleLogin} />
+  }
 
-            <div className="result-card">
-              <h3>🎨 Travel Style</h3>
-              <p className="highlight">{response.travel_style.charAt(0).toUpperCase() + response.travel_style.slice(1)}</p>
-            </div>
-
-            <div className="result-card">
-              <h3>💡 Why This Destination</h3>
-              <p>{response.explanation}</p>
-            </div>
-
-            <div className="result-card">
-              <h3>🌤️ Current Weather</h3>
-              <p>{response.weather_summary}</p>
-            </div>
-          </div>
-        )}
-
-        {!response && !error && !loading && (
-          <div className="empty-state">
-            <p>Start by describing your ideal trip!</p>
-          </div>
-        )}
-      </main>
-    </div>
-  )
+  return <TravelPlannerPage user={user} onLogout={handleLogout} token={token} />
 }
+
+export default App
+
 
 export default App
